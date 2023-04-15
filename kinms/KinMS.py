@@ -56,7 +56,7 @@ class KinMS:
     #/////////////////////////////////////////////////////////////////////////#
     #=========================================================================#
 
-    def __init__(self, xs, ys, vs, cellSize, dv, beamSize, 
+    def __init__(self, xs, ys, vs, cellSize, dv, beamSize, lsf_fwhm=None,
                   nSamps=None, seed=None, fixSeed=True,
                  cleanOut=False,  huge_beam=False, verbose=False):
         """       
@@ -100,6 +100,7 @@ class KinMS:
         self.cellSize = cellSize
         self.dv = dv
         self.beamSize = beamSize
+        self.lsf_fwhm = lsf_fwhm
         self.fixSeed = fixSeed
         
         if not fixSeed:
@@ -128,6 +129,11 @@ class KinMS:
             self.psf = self.makebeam(self.x_size, self.y_size, self.beamSize,cellSize=self.cellSize)
         else:
             self.psf=1
+
+        if self.lsf_fwhm != None:
+            self.lsf = self.makelsf(self.v_size, self.lsf_fwhm, dv=self.dv)
+        else:
+            self.lsf = None
         
         #draw random samples, so only has to be done once
         rng1 = np.random.RandomState(self.seed[0])
@@ -237,7 +243,7 @@ class KinMS:
                 otherwise default return is the untrimmed psf.              
         """
 
-        if not cent: cent = [xpixels / 2, ypixels / 2]
+        if not cent: cent = [int(xpixels / 2), int(ypixels / 2)]
 
         beamSize = np.array(beamSize)
 
@@ -305,6 +311,50 @@ class KinMS:
         trimmed_psf = Cutout2D(psf, (cent[1], cent[0]), newsize).data  # cut around the psf in the right location
 
         return trimmed_psf
+    
+    
+    def makelsf(self, vpixels, lsf_width, dv=1, lsfcent=None):
+        """
+        T.Tsukui 2023/04/10
+        Creates a line spread function (LSF) with which one can convolve their cube.
+        
+        :param vpixels:
+                (float or int) Number of pixels in the v-axis
+        :param lsf_width:
+                (float or int) Scalar for width of convolving LSF (in km/s).
+        :param dv:
+                (float or int) spectral gridding size required (km/s/pixel)
+        :param lsfcent: 
+            (array or list of float or int) Optional, default value is vpixel/2.
+                Central location of the beam in units of pixels.
+        :return lsf:
+                (float array) lsf required for convlution in self.model_cube().  
+        """
+
+        if not lsfcent: lsfcent = int(vpixels / 2)
+
+        x = np.arange(vpixels) - lsfcent
+
+        lsf = np.exp(-0.5 * (x / (lsf_width/dv/2.355)) ** 2)
+
+        lsf[lsf < 1e-5] = 0  # set all kernel values that are very low to zero
+
+        idx = np.where(lsf > 0)[0]  # find the location of the non-zero values of the psf
+
+        newsize = (idx[-1] - idx[0])  # the size of the actual (non-zero) beam is this
+
+        if newsize % 2 == 0:
+            newsize += 1  # add 1 pixel just in case
+        else:
+            newsize += 2  # if necessary to keep the kernel size odd, add 2 pixels
+        
+        if newsize>vpixels:
+            if vpixels % 2 == 0:
+                newsize = vpixels-1  # keep the kernel size odd
+            else:
+                newsize = vpixels 
+
+        return lsf[lsfcent-newsize//2:lsfcent+newsize//2+1]
 
     #=========================================================================#
     #/////////////////////////////////////////////////////////////////////////#
@@ -814,7 +864,7 @@ class KinMS:
     # /////////////////////////////////////////////////////////////////////////#
     # =========================================================================#
 
-    def normalise_cube(self, cube, psf):
+    def normalise_cube(self, cube, psf, lsf=None):
         """
         Normalise cube by the known integrated flux.
         
@@ -822,11 +872,18 @@ class KinMS:
             (3D array) unnormalised spectral cube
         :param psf: 
             (2D array) psf of the mock observations, to convolve the cube with
+        :param lsf: 
+            (1D array) psf of the mock observations, to convolve the cube with (Need to test this)
         """
+
+        if lsf is not None:
+            normalise = psf.sum() * lsf.sum()
+        else:
+            normalise = psf.sum()
 
         if self.intFlux > 0:
             if not self.cleanOut:
-                cube *= ((self.intFlux * psf.sum()) / (cube.sum() * self.dv))
+                cube *= ((self.intFlux * normalise) / (cube.sum() * self.dv))
             else:
                 cube *= (self.intFlux / (cube.sum() * self.dv))
 
@@ -1099,11 +1156,22 @@ class KinMS:
                 for i in range(cube.shape[2]):
                     if np.sum(cube[:, :, i]) > 0:
                         cube[:, :, i] = convolve_fft(cube[:, :, i], self.psf)  
-        
+
+        # Convolve with the line spread function (LSF) with fast fft if specified. 
+        if self.lsf_fwhm != None:
+            
+            # convolve lsf with cube in the spectral direction
+            for i in range(cube.shape[0]):
+                for j in range(cube.shape[1]):
+                    if np.sum(cube[i, j, :]) > 0:
+                        cube[i, j, :] = convolve(cube[i, j, :], self.lsf)
 
                             
         # Normalise the cube by known integrated flux
-        self.normalise_cube(cube, self.psf)
+        if self.lsf_fwhm == None:
+            self.normalise_cube(cube, self.psf)
+        else:
+            self.normalise_cube(cube, self.psf, lsf=self.lsf)
         
 
         # If appropriate, generate the FITS file header and save to disc.
