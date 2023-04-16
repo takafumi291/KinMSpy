@@ -338,6 +338,7 @@ class KinMS:
         lsf = np.exp(-0.5 * (x / (lsf_width/dv/2.355)) ** 2)
 
         lsf[lsf < 1e-5] = 0  # set all kernel values that are very low to zero
+        lsf/=np.sum(lsf) # normalize the lsf
 
         idx = np.where(lsf > 0)[0]  # find the location of the non-zero values of the psf
 
@@ -873,7 +874,7 @@ class KinMS:
         :param psf: 
             (2D array) psf of the mock observations, to convolve the cube with
         :param lsf: 
-            (1D array) psf of the mock observations, to convolve the cube with (Need to test this)
+            (1D array) lfs of the mock observations, to convolve the cube with
         """
 
         if lsf is not None:
@@ -952,7 +953,7 @@ class KinMS:
             List of [gasmass, distance] - total gas mass in solar masses, total distance in Mpc.                 
         :param intFlux: 
             (float) Optional, default value is 1.
-            Total integrated flux you want the output gas to have. (In units of BUNIT - default Jy/km/s).
+            Total integrated flux you want the output gas to have. (In units of BUNIT - default Jy/(km/s).
         :param phaseCent: 
             (list or array of float or int of length 2) Optional, default value is [0, 0].
             Specifies the morphological centre of the disc structure you create with respect to the central pixel
