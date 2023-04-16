@@ -338,7 +338,7 @@ class KinMS:
         lsf = np.exp(-0.5 * (x / (lsf_width/dv/2.355)) ** 2)
 
         lsf[lsf < 1e-5] = 0  # set all kernel values that are very low to zero
-        lsf/=np.sum(lsf) # normalize the lsf
+        lsf/=np.sum(lsf) # normalise the lsf
 
         idx = np.where(lsf > 0)[0]  # find the location of the non-zero values of the psf
 
@@ -865,7 +865,7 @@ class KinMS:
     # /////////////////////////////////////////////////////////////////////////#
     # =========================================================================#
 
-    def normalise_cube(self, cube, psf, lsf=None):
+    def normalise_cube(self, cube, psf):
         """
         Normalise cube by the known integrated flux.
         
@@ -877,14 +877,9 @@ class KinMS:
             (1D array) lfs of the mock observations, to convolve the cube with
         """
 
-        if lsf is not None:
-            normalise = psf.sum() * lsf.sum()
-        else:
-            normalise = psf.sum()
-
         if self.intFlux > 0:
             if not self.cleanOut:
-                cube *= ((self.intFlux * normalise) / (cube.sum() * self.dv))
+                cube *= ((self.intFlux * psf.sum()) / (cube.sum() * self.dv))
             else:
                 cube *= (self.intFlux / (cube.sum() * self.dv))
 
@@ -1169,10 +1164,9 @@ class KinMS:
 
                             
         # Normalise the cube by known integrated flux
-        if self.lsf_fwhm == None:
-            self.normalise_cube(cube, self.psf)
-        else:
-            self.normalise_cube(cube, self.psf, lsf=self.lsf)
+
+        self.normalise_cube(cube, self.psf)
+
         
 
         # If appropriate, generate the FITS file header and save to disc.
