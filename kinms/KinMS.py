@@ -884,7 +884,10 @@ class KinMS:
                 cube *= (self.intFlux / (cube.sum() * self.dv))
 
         elif np.any(self.flux_clouds) != None:
-            cube *= (self.flux_clouds.sum() / cube.sum())
+            cube = cube
+            #cube *= (self.flux_clouds.sum() / cube.sum())
+            #to preserve the flux distribution described by flux_clouds
+            #the original code artificially increase the flux, compensating the lost flux due to convolution and out of range of the particle's velocity .
 
         else:
             cube /= cube.sum()
